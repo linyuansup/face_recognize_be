@@ -1,0 +1,16 @@
+GET http://localhost:80/user/delete
+Accept: application/json
+
+###
+GET http://localhost:80/user/add
+Accept: application/json
+
+###
+GET http://localhost:80/user/getCheckInfo
+Accept: application/json
+
+###
+GET http://localhost:80/user/login
+Accept: application/json
+
+###
