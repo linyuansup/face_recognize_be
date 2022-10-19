@@ -1,7 +1,10 @@
+import ast
 import time
 from dataclasses import dataclass
 from typing import List, MutableMapping, Any, Mapping
 
+import face_recognition
+import numpy
 from flask import Flask, request
 from pymongo import MongoClient
 from pymongo.collection import Collection
@@ -14,53 +17,49 @@ db: Collection[Mapping[str, Any] | Any] = MongoClient('mongodb://localhost:27017
 
 
 @dataclass
-class CheckTime:
-    year: int
-    month: int
-    day: int
-    hour: int
-    minute: int
-    second: int
-
-    def to_str(self) -> str:
-        return f'{self.year}-{self.month}-{self.day} {self.hour}:{self.minute}:{self.second}'
-
-
-def str_to_check_time(check_time: str) -> CheckTime:
-    year, month, day, hour, minute, second = map(int, check_time.split('-'))
-    return CheckTime(year, month, day, hour, minute, second)
-
-
-@dataclass
 class User:
     id: int
     name: str
     face_id: str
-    login_time: List[CheckTime]
+    login_time: List[str]
 
     def to_mapping(self) -> MutableMapping:
         return {
             'id': self.id,
             'name': self.name,
             'face_id': self.face_id,
-            'login_time': [check_time.to_str() for check_time in self.login_time]
+            'login_time': [check_time for check_time in self.login_time]
         }
 
 
 @app.route('/checkFace')
 def check_face():
-    face_id = request.args.get('face_id')
-    user = db.find_one({'face_id': face_id})
-    if user is None:
-        return 'fail'
-    year: int = time.localtime().tm_year
-    month: int = time.localtime().tm_mon
-    day: int = time.localtime().tm_mday
-    hour: int = time.localtime().tm_hour
-    minute: int = time.localtime().tm_min
-    second: int = time.localtime().tm_sec
-    check_time: CheckTime = CheckTime(year, month, day, hour, minute, second)
-    db.update_one({'face_id': face_id}, {'$push': {'login_time': check_time.to_str()}})
+    global user
+    face_id = face_id_decoding(request.args.get('face_id'))
+    users: Cursor[Mapping[str, Any] | Any] = db.find()
+    face_ids = []
+    for user in users:
+        face_ids.append(face_id_decoding(user['face_id']))
+    face_distances = face_recognition.face_distance(face_ids, face_id)
+    best_match_index = numpy.argmin(face_distances)
+    if face_distances[best_match_index] < 0.4:
+        id1 = face_ids[best_match_index]
+        face_id_encoded = ','.join(map(str, id1.tolist()))
+        user = db.find_one({'face_id': face_id_encoded})
+    else:
+        return 'Unknown'
+    year: str = str(time.localtime().tm_year)
+    month: str = str(time.localtime().tm_mon)
+    day: str = str(time.localtime().tm_mday)
+    hour: str = str(time.localtime().tm_hour)
+    minute: str = str(time.localtime().tm_min)
+    second: str = str(time.localtime().tm_sec)
+    check_time: str = year + month + day + hour + minute
+    if len(second) == 1:
+        check_time += '0' + second
+    else:
+        check_time += second
+    db.update_one({'face_id': face_id_encoded}, {'$push': {'login_time': check_time}})
     return {'name': user['name'], 'id': user['id']}
 
 
@@ -87,7 +86,7 @@ def delete_user():
 def get_all_user():
     users: Cursor[Mapping[str, Any] | Any] = db.find()
     return {'users': [User(id=user['id'], name=user['name'], face_id=user['face_id'],
-                           login_time=[str_to_check_time(check_time) for check_time in user['login_time']]).to_mapping()
+                           login_time=[check_time for check_time in user['login_time']]).to_mapping()
                       for user in users]}
 
 
@@ -109,15 +108,21 @@ def change_user_info():
 def get_check_info():
     start_time: str = request.args.get('start_time')
     end_time: str = request.args.get('end_time')
-    users: Cursor[Mapping[str, Any] | Any] = db.find({'login_time': {
-        '$elemMatch': {
-            '$gte': start_time,
-            '$lte': end_time
-        }
-    }})
-    return {
-        'users': [User(**user).to_mapping() for user in users]
-    }
+    result = {}
+    users: Cursor[Mapping[str, Any] | Any] = db.find()
+    for user in users:
+        for check_time in user['login_time']:
+            if int(start_time) <= int(check_time) <= int(end_time):
+                if user['name'] not in result:
+                    result[user['name']] = [check_time]
+                else:
+                    result[user['name']].append(check_time)
+    return result
+
+
+def face_id_decoding(face_id: str) -> numpy.ndarray:
+    code = face_id.split(',')
+    return numpy.array(code, dtype='float64')
 
 
 if __name__ == '__main__':
