@@ -1,4 +1,3 @@
-import ast
 import time
 from dataclasses import dataclass
 from typing import List, MutableMapping, Any, Mapping
@@ -13,7 +12,8 @@ from pymongo.results import DeleteResult, UpdateResult
 
 app: Flask = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
-db: Collection[Mapping[str, Any] | Any] = MongoClient('mongodb://localhost:27017/')['test']['face_recognition']
+db: Collection[Mapping[str, Any] | Any] = MongoClient(
+    'mongodb://localhost:27017/')['test']['face_recognition']
 
 
 @dataclass
@@ -59,7 +59,8 @@ def check_face():
         check_time += '0' + second
     else:
         check_time += second
-    db.update_one({'face_id': face_id_encoded}, {'$push': {'login_time': check_time}})
+    db.update_one({'face_id': face_id_encoded}, {
+                  '$push': {'login_time': check_time}})
     return {'name': user['name'], 'id': user['id']}
 
 
@@ -113,10 +114,13 @@ def get_check_info():
     for user in users:
         for check_time in user['login_time']:
             if int(start_time) <= int(check_time) <= int(end_time):
+                data = check_time[:4]+"."+check_time[4: 6]+"."+check_time[6: 8] + \
+                    " "+check_time[8: 10]+":" + \
+                    check_time[10: 12]+":"+check_time[12: 14]
                 if user['name'] not in result:
-                    result[user['name']] = [check_time]
+                    result[user['name']] = [data]
                 else:
-                    result[user['name']].append(check_time)
+                    result[user['name']].append(data)
     return result
 
 
