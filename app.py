@@ -21,6 +21,7 @@ db: Collection[Mapping[str, Any] | Any] = MongoClient("mongodb://localhost:27017
 class User:
     id: int
     name: str
+    isAdmin: bool
     face_id: str
     login_time: List[str]
 
@@ -29,6 +30,7 @@ class User:
             "id": self.id,
             "name": self.name,
             "face_id": self.face_id,
+            "isAdmin": self.isAdmin,
             "login_time": [check_time for check_time in self.login_time],
         }
 
@@ -68,8 +70,9 @@ def check_face():
 def add_user():
     name: str = request.args.get("name")
     face_id: str = request.args.get("face_id")
+    isAdmin: bool = request.args.get("isAdmin")
     userID: int = db.count_documents({}) + 1
-    user: User = User(id=userID, name=name, face_id=face_id, login_time=[])
+    user: User = User(id=userID, name=name, face_id=face_id, login_time=[], isAdmin=isAdmin)
     db.insert_one(user.to_mapping())
     return "success"
 
@@ -92,6 +95,7 @@ def get_all_user():
                 id=user["id"],
                 name=user["name"],
                 face_id=user["face_id"],
+                isAdmin=user["isAdmin"],
                 login_time=[check_time for check_time in user["login_time"]],
             ).to_mapping()
             for user in users
@@ -104,11 +108,14 @@ def change_user_info():
     user_id: str = request.args.get("id")
     name: str = request.args.get("name")
     face_id: str = request.args.get("face_id")
+    isAdmin: str = request.args.get("isAdmin")
     result: UpdateResult = db.update_one(
-        {"id": int(user_id)}, {"$set": {"name": name, "face_id": face_id}}
+        {"id": int(user_id)}, {"$set": {"name": name, "face_id": face_id, "isAdmin": isAdmin}}
     )
     if result.modified_count == 0:
-        return "not found"
+        if result.matched_count == 0:
+            return "not found"
+        return "no change"
     return "success"
 
 
