@@ -72,7 +72,9 @@ def add_user():
     face_id: str = request.args.get("face_id")
     isAdmin: bool = request.args.get("isAdmin")
     userID: int = db.count_documents({}) + 1
-    user: User = User(id=userID, name=name, face_id=face_id, login_time=[], isAdmin=isAdmin)
+    user: User = User(
+        id=userID, name=name, face_id=face_id, login_time=[], isAdmin=isAdmin
+    )
     db.insert_one(user.to_mapping())
     return "success"
 
@@ -110,7 +112,8 @@ def change_user_info():
     face_id: str = request.args.get("face_id")
     isAdmin: str = request.args.get("isAdmin")
     result: UpdateResult = db.update_one(
-        {"id": int(user_id)}, {"$set": {"name": name, "face_id": face_id, "isAdmin": isAdmin}}
+        {"id": int(user_id)},
+        {"$set": {"name": name, "face_id": face_id, "isAdmin": isAdmin}},
     )
     if result.modified_count == 0:
         if result.matched_count == 0:
@@ -154,4 +157,4 @@ def face_id_decoding(face_id: str) -> numpy.ndarray:
 
 
 if __name__ == "__main__":
-    app.run()
+    app.run(host="0.0.0.0", port="5000")
