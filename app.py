@@ -1,4 +1,5 @@
-import time
+import datetime
+import pytz
 from dataclasses import dataclass
 from typing import List, MutableMapping, Any, Mapping
 
@@ -12,14 +13,13 @@ from pymongo.results import DeleteResult, UpdateResult
 
 app: Flask = Flask(__name__)
 app.config["JSON_AS_ASCII"] = False
-db: Collection[Mapping[str, Any] | Any] = MongoClient("mongodb://localhost:27017/")[
+db: Collection[Mapping[str, Any] | Any] = MongoClient("mongodb://172.18.0.2:27017/")[
     "test"
 ]["face_recognition"]
 
 
 @dataclass
 class User:
-    id: int
     name: str
     isAdmin: bool
     face_id: str
@@ -27,7 +27,6 @@ class User:
 
     def to_mapping(self) -> MutableMapping:
         return {
-            "id": self.id,
             "name": self.name,
             "face_id": self.face_id,
             "isAdmin": self.isAdmin,
@@ -51,19 +50,9 @@ def check_face():
         user = db.find_one({"face_id": face_id_encoded})
     else:
         return "Unknown"
-    year: str = str(time.localtime().tm_year)
-    month: str = str(time.localtime().tm_mon)
-    day: str = str(time.localtime().tm_mday)
-    hour: str = str(time.localtime().tm_hour)
-    minute: str = str(time.localtime().tm_min)
-    second: str = str(time.localtime().tm_sec)
-    check_time: str = year + month + day + hour + minute
-    if len(second) == 1:
-        check_time += "0" + second
-    else:
-        check_time += second
+    check_time: str = datetime.datetime.now(pytz.timezone('Asia/Shanghai')).strftime("%Y%m%d%H%M%S")
     db.update_one({"face_id": face_id_encoded}, {"$push": {"login_time": check_time}})
-    return {"name": user["name"], "id": user["id"]}
+    return {"name": user["name"], "isAdmin": user["isAdmin"]}
 
 
 @app.route("/addUser")
@@ -71,9 +60,8 @@ def add_user():
     name: str = request.args.get("name")
     face_id: str = request.args.get("face_id")
     isAdmin: bool = request.args.get("isAdmin")
-    userID: int = db.count_documents({}) + 1
     user: User = User(
-        id=userID, name=name, face_id=face_id, login_time=[], isAdmin=isAdmin
+        name=name, face_id=face_id, login_time=[], isAdmin=isAdmin
     )
     db.insert_one(user.to_mapping())
     return "success"
@@ -81,74 +69,66 @@ def add_user():
 
 @app.route("/deleteUser")
 def delete_user():
-    id: str = request.args.get("id")
-    result: DeleteResult = db.delete_one({"id": int(id)})
+    name: str = request.args.get("id")
+    result: DeleteResult = db.delete_one({"name": name})
     if result.deleted_count == 0:
         return "not found"
     return "success"
 
 
-@app.route("/getAllUser")
-def get_all_user():
-    users: Cursor[Mapping[str, Any] | Any] = db.find()
-    return {
-        "users": [
-            User(
-                id=user["id"],
-                name=user["name"],
-                face_id=user["face_id"],
-                isAdmin=user["isAdmin"],
-                login_time=[check_time for check_time in user["login_time"]],
-            ).to_mapping()
-            for user in users
-        ]
-    }
+# @app.route("/getAllUser")
+# def get_all_user():
+#     users: Cursor[Mapping[str, Any] | Any] = db.find()
+#     return {
+#         "users": [
+#             User(
+#                 id=user["id"],
+#                 name=user["name"],
+#                 face_id=user["face_id"],
+#                 isAdmin=user["isAdmin"],
+#                 login_time=[check_time for check_time in user["login_time"]],
+#             ).to_mapping()
+#             for user in users
+#         ]
+#     }
 
 
-@app.route("/changeUserInfo")
-def change_user_info():
-    user_id: str = request.args.get("id")
-    name: str = request.args.get("name")
-    face_id: str = request.args.get("face_id")
-    isAdmin: str = request.args.get("isAdmin")
-    result: UpdateResult = db.update_one(
-        {"id": int(user_id)},
-        {"$set": {"name": name, "face_id": face_id, "isAdmin": isAdmin}},
-    )
-    if result.modified_count == 0:
-        if result.matched_count == 0:
-            return "not found"
-        return "no change"
-    return "success"
+# @app.route("/changeUserInfo")
+# def change_user_info():
+#     user_id: str = request.args.get("id")
+#     name: str = request.args.get("name")
+#     face_id: str = request.args.get("face_id")
+#     isAdmin: str = request.args.get("isAdmin")
+#     result: UpdateResult = db.update_one(
+#         {"id": int(user_id)},
+#         {"$set": {"name": name, "face_id": face_id, "isAdmin": isAdmin}},
+#     )
+#     if result.modified_count == 0:
+#         if result.matched_count == 0:
+#             return "not found"
+#         return "no change"
+#     return "success"
 
 
 @app.route("/getCheckInfo")
 def get_check_info():
     start_time: str = request.args.get("start_time")
     end_time: str = request.args.get("end_time")
+    start_time = start_time.replace("-", "").replace(":", "").replace(" ", "")
+    end_time = end_time.replace("-", "").replace(":", "").replace(" ", "")
     result = {}
     users: Cursor[Mapping[str, Any] | Any] = db.find()
     for user in users:
-        for check_time in user["login_time"]:
-            if int(start_time) <= int(check_time) <= int(end_time):
-                data = (
-                    check_time[:4]
-                    + "."
-                    + check_time[4:6]
-                    + "."
-                    + check_time[6:8]
-                    + " "
-                    + check_time[8:10]
-                    + ":"
-                    + check_time[10:12]
-                    + ":"
-                    + check_time[12:14]
-                )
-                if user["name"] not in result:
-                    result[user["name"]] = [data]
-                else:
-                    result[user["name"]].append(data)
-    return result
+        for checkTime in user["login_time"]:
+            if start_time <= checkTime <= end_time:
+                result[checkTime] = user["name"]
+    info_sorted = sorted(result.items(), key=lambda v:v[0])
+    res = dict(info_sorted)
+    final = {}
+    for key,values in res.items():
+        time = key[:4] + "." + key[4:6] + "." + key[6:8] + " " + key[8:10] + ":" + key[10:12] + ":" + key[12:]
+        final[time] = values
+    return final
 
 
 def face_id_decoding(face_id: str) -> numpy.ndarray:
