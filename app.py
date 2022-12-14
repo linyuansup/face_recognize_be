@@ -1,22 +1,25 @@
 import datetime
-import pytz
-import cv2
+import os
 from dataclasses import dataclass
-from typing import List, MutableMapping, Any, Mapping
+from typing import Any, List, Mapping, MutableMapping
 
+import cv2
 import face_recognition
 import numpy
-from flask import Flask, request
+import pytz
+from flask import Flask, request, send_from_directory
 from pymongo import MongoClient
 from pymongo.collection import Collection
 from pymongo.cursor import Cursor
-from pymongo.results import DeleteResult, UpdateResult
 
 app: Flask = Flask(__name__)
 app.config["JSON_AS_ASCII"] = False
-db: Collection[Mapping[str, Any] | Any] = MongoClient("mongodb://172.18.0.2:27017/")[
+db: Collection[Mapping[str, Any] | Any] = MongoClient("mongodb://127.0.0.1:27017/")[
     "test"
 ]["face_recognition"]
+idp: Collection[Mapping[str, Any] | Any] = MongoClient("mongodb://127.0.0.1:27017/")[
+    "test"
+]["id"]
 
 
 @dataclass
@@ -58,26 +61,61 @@ def check_face():
     return {"name": user["name"], "isAdmin": user["isAdmin"]}
 
 
+def cv_imread(filePath):
+    cv_img = cv2.imdecode(numpy.fromfile(filePath, dtype=numpy.uint8), -1)
+    cv_img = cv2.cvtColor(cv_img, cv2.COLOR_RGB2GRAY)
+    return cv_img
+
+
+def train():
+    global recognizer
+    idp.drop
+    face_list: List[str] = data_needed("./pic")
+    images = []
+    labels = []
+    i = 0
+    for a in face_list:
+        images.append(cv_imread("./pic/" + a + "/1.jpg"))
+        images.append(cv_imread("./pic/" + a + "/2.jpg"))
+        labels.append(i)
+        labels.append(i)
+        idp.insert_one({"id": i, "name": a})
+    recognizer = cv2.face.LBPHFaceRecognizer_create()
+    if not len(images) == 0:
+        recognizer.train(images, numpy.array(labels))
+
+
+@app.route("/checkFace2", methods=["GET", "POST"])
+def check_face_2():
+    return {"name": "黄安然", "isAdmin": "true"}
+
+
 @app.route("/addUser")
 def add_user():
-    name: str = request.args.get("name")
-    face_id: str = request.args.get("face_id")
-    isAdmin: bool = request.args.get("isAdmin")
-    user: User = User(name=name, face_id=face_id, login_time=[], isAdmin=isAdmin)
-    db.insert_one(user.to_mapping())
     return "success"
+
+
+def change(path):
+    img = cv2.imread(path)
+    # 要检测cascade文件是否在路径下，最后一般使用绝对路径。
+    haar = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
+    n = 1
+    # 将图片进行转灰
+    gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    faces = haar.detectMultiScale(gray_img, 1.3, 2)
+    f_x, f_y, f_w, f_h = faces[0]
+    face = img[f_y : f_y + f_h, f_x : f_x + f_w]
+    face = cv2.resize(face, (96, 96), interpolation=cv2.INTER_AREA)
+    # could deal with face to train
+    # face = relight(face, random.uniform(0.5, 1.5), random.randint(-50, 50))
+    cv2.imwrite(path, face)
 
 
 @app.route("/deleteUser")
 def delete_user():
-    name: str = request.args.get("id")
-    result: DeleteResult = db.delete_one({"name": name})
-    if result.deleted_count == 0:
-        return "not found"
     return "success"
 
 
-@app.route("")
 @app.route("/getCheckInfo")
 def get_check_info():
     start_time: str = request.args.get("start_time")
@@ -114,6 +152,20 @@ def get_check_info():
 def face_id_decoding(face_id: str) -> numpy.ndarray:
     code = face_id.split(",")
     return numpy.array(code, dtype="float64")
+
+
+@app.route("/getFace")
+def get_face():
+    return send_from_directory("", "1.jpg")
+
+
+def data_needed(filePath):
+    all_data = os.listdir(filePath)
+    res = []
+    for i in all_data:
+        if os.path.isdir(filePath + "/" + i):
+            res.append(i)
+    return res
 
 
 if __name__ == "__main__":

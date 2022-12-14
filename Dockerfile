@@ -10,6 +10,8 @@ RUN pip3 --default-timeout=100 install -r ./requirements.txt -i http://mirrors.a
 
 COPY app.py app.py
 
+COPY haarcascade_frontalface_default.xml haarcascade_frontalface_default.xml
+
 EXPOSE 5000
 
 CMD [ "python3", "/app.py" ]
